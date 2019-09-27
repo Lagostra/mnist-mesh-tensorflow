@@ -30,7 +30,7 @@ import tensorflow as tf
 tf.flags.DEFINE_string("data_dir", "/tmp/mnist_data",
                        "Path to directory containing the MNIST dataset")
 tf.flags.DEFINE_string("model_dir", "/tmp/mnist_model", "Estimator model_dir")
-tf.flags.DEFINE_integer("batch_size", 200,
+tf.flags.DEFINE_integer("batch_size", 100,
                         "Mini-batch size for the training. Note that this "
                         "is the global batch size and not the per-shard batch.")
 tf.flags.DEFINE_integer("hidden_size", 512, "Size of each hidden layer.")
@@ -62,7 +62,7 @@ def mnist_model(image, labels, mesh):
   
   # tf_images is a tf.Tensor with shape [batch, 28, 28] and dtype tf.float32
   # tf_labels is a tf.Tensor with shape [batch] and dtype tf.int32
-  batch_dim = mtf.Dimension("batch", image.shape[0])
+  batch_dim = mtf.Dimension("batch", 100)
   rows_dim = mtf.Dimension("rows", 28)
   cols_dim = mtf.Dimension("cols", 28)
   hidden_dim = mtf.Dimension("hidden", 1024)
