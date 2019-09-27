@@ -62,9 +62,6 @@ def mnist_model(image, labels, mesh):
   
   # tf_images is a tf.Tensor with shape [batch, 28, 28] and dtype tf.float32
   # tf_labels is a tf.Tensor with shape [batch] and dtype tf.int32
-
-  graph = mtf.Graph()
-  mesh = mtf.Mesh(graph, "my_mesh")
   batch_dim = mtf.Dimension("batch", image.shape[0])
   rows_dim = mtf.Dimension("rows", 28)
   cols_dim = mtf.Dimension("cols", 28)
