@@ -59,55 +59,28 @@ def mnist_model(image, labels, mesh):
     logits: a mtf.Tensor with shape [batch, 10]
     loss: a mtf.Tensor with shape []
   """
-  batch_dim = mtf.Dimension("batch", FLAGS.batch_size)
-  row_blocks_dim = mtf.Dimension("row_blocks", 4)
-  col_blocks_dim = mtf.Dimension("col_blocks", 4)
-  rows_dim = mtf.Dimension("rows_size", 7)
-  cols_dim = mtf.Dimension("cols_size", 7)
+  
+  # tf_images is a tf.Tensor with shape [batch, 28, 28] and dtype tf.float32
+  # tf_labels is a tf.Tensor with shape [batch] and dtype tf.int32
 
+  graph = mtf.Graph()
+  mesh = mtf.Mesh(graph, "my_mesh")
+  batch_dim = mtf.Dimension("batch", image.shape[0])
+  rows_dim = mtf.Dimension("rows", 28)
+  cols_dim = mtf.Dimension("cols", 28)
+  hidden_dim = mtf.Dimension("hidden", 1024)
   classes_dim = mtf.Dimension("classes", 10)
-  one_channel_dim = mtf.Dimension("one_channel", 1)
+  images = mtf.import_tf_tensor(
+      mesh, image, shape=[batch_dim, rows_dim, cols_dim])
+  labels = mtf.import_tf_tensor(mesh, labels, [batch_dim])
+  w1 = mtf.get_variable(mesh, "w1", [rows_dim, cols_dim, hidden_dim])
+  w2 = mtf.get_variable(mesh, "w2", [hidden_dim, classes_dim])
+  # einsum is a generalization of matrix multiplication (see numpy.einsum)
+  hidden = mtf.relu(mtf.einsum(images, w1, output_shape=[batch_dim, hidden_dim]))
+  logits = mtf.einsum(hidden, w2, output_shape=[batch_dim, classes_dim])
+  loss = mtf.reduce_mean(mtf.layers.softmax_cross_entropy_with_logits(
+      logits, mtf.one_hot(labels, classes_dim), classes_dim))
 
-  x = mtf.import_tf_tensor(
-      mesh, tf.reshape(image, [FLAGS.batch_size, 4, 7, 4, 7, 1]),
-      mtf.Shape(
-          [batch_dim, row_blocks_dim, rows_dim,
-           col_blocks_dim, cols_dim, one_channel_dim]))
-  x = mtf.transpose(x, [
-      batch_dim, row_blocks_dim, col_blocks_dim,
-      rows_dim, cols_dim, one_channel_dim])
-
-  # add some convolutional layers to demonstrate that convolution works.
-  filters1_dim = mtf.Dimension("filters1", 16)
-  filters2_dim = mtf.Dimension("filters2", 16)
-  f1 = mtf.relu(mtf.layers.conv2d_with_blocks(
-      x, filters1_dim, filter_size=[9, 9], strides=[1, 1], padding="SAME",
-      h_blocks_dim=row_blocks_dim, w_blocks_dim=col_blocks_dim, name="conv0"))
-  f2 = mtf.relu(mtf.layers.conv2d_with_blocks(
-      f1, filters2_dim, filter_size=[9, 9], strides=[1, 1], padding="SAME",
-      h_blocks_dim=row_blocks_dim, w_blocks_dim=col_blocks_dim, name="conv1"))
-  x = mtf.reduce_mean(f2, reduced_dim=filters2_dim)
-
-  # add some fully-connected dense layers.
-  hidden_dim1 = mtf.Dimension("hidden1", FLAGS.hidden_size)
-  hidden_dim2 = mtf.Dimension("hidden2", FLAGS.hidden_size)
-
-  h1 = mtf.layers.dense(
-      x, hidden_dim1,
-      reduced_dims=x.shape.dims[-4:],
-      activation=mtf.relu, name="hidden1")
-  h2 = mtf.layers.dense(
-      h1, hidden_dim2,
-      activation=mtf.relu, name="hidden2")
-  logits = mtf.layers.dense(h2, classes_dim, name="logits")
-  if labels is None:
-    loss = None
-  else:
-    labels = mtf.import_tf_tensor(
-        mesh, tf.reshape(labels, [FLAGS.batch_size]), mtf.Shape([batch_dim]))
-    loss = mtf.layers.softmax_cross_entropy_with_logits(
-        logits, mtf.one_hot(labels, classes_dim), classes_dim)
-    loss = mtf.reduce_mean(loss)
   return logits, loss
 
 
@@ -119,12 +92,22 @@ def model_fn(features, labels, mode, params):
   graph = mtf.Graph()
   mesh = mtf.Mesh(graph, "my_mesh")
   logits, loss = mnist_model(features, labels, mesh)
-  mesh_shape = mtf.convert_to_shape(FLAGS.mesh_shape)
-  layout_rules = mtf.convert_to_layout_rules(FLAGS.layout)
-  mesh_size = mesh_shape.size
-  mesh_devices = [""] * mesh_size
+  #mesh_shape = mtf.convert_to_shape(FLAGS.mesh_shape)
+  #layout_rules = mtf.convert_to_layout_rules(FLAGS.layout)
+  #mesh_size = mesh_shape.size
+  #mesh_devices = [""] * mesh_size
+  #mesh_impl = mtf.placement_mesh_impl.PlacementMeshImpl(
+  #    mesh_shape, layout_rules, mesh_devices)
+
+
+  devices = ["gpu:0", "gpu:1"]
+  mesh_shape = [("all_processors"), 2]
+  layout_rules = [("batch", "all_processors")] # Data Parallel
+  # layout_rules = [("hidden", "all_processors")] # Model Parallel
   mesh_impl = mtf.placement_mesh_impl.PlacementMeshImpl(
-      mesh_shape, layout_rules, mesh_devices)
+      mesh_shape, layout_rules, devices
+  )
+
 
   if mode == tf.estimator.ModeKeys.TRAIN:
     var_grads = mtf.gradients(
